@@ -72,5 +72,9 @@ code { background: #2d3047; padding: 1px 5px; border-radius: 4px; }
     .caret { display: none; }
     .ledger td { padding: 6px 4px; }
     .container { padding: 14px 8px 40px; }
+    th, td { white-space: normal; font-size: 13px; padding: 7px 4px; }
+    th { font-size: 11px; letter-spacing: 0; }
+    .big { font-size: 14px; }
+    .badge { margin-left: 0; }
     .hero h1 { font-size: 26px; }
 }
