@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FAAB Tracker</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E%24%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header class="hero">
+            <h1>FAAB Tracker</h1>
+            <p id="league-name" class="muted">Loading league…</p>
+        </header>
+
+        <section class="card rules">
+            <div>Weekly high score: <b class="pos">+$<span id="top-bonus"></span></b></div>
+            <div>Weekly low score: <b class="pos">+$<span id="low-bonus"></span></b></div>
+            <div>Sleeper max: <b>$<span id="cap"></span></b> (extra is banked here)</div>
+            <div id="weeks-counted" class="muted"></div>
+        </section>
+
+        <div id="error" class="card error hidden"></div>
+        <div id="loading" class="loading"><div class="spinner"></div><span>Loading Sleeper data…</span></div>
+
+        <section id="results" class="hidden">
+            <div id="alert" class="card alert hidden"></div>
+            <div class="card table-card">
+                <table class="balances">
+                    <thead>
+                        <tr>
+                            <th class="team-col">Team</th>
+                            <th class="num hide-sm">Spent</th>
+                            <th class="num">Bonuses</th>
+                            <th class="num" title="$100 minus spend plus bonuses, with no cap">Real balance</th>
+                            <th class="num hide-sm" title="What Sleeper should show: the real balance, capped at the Sleeper max">Should show</th>
+                            <th class="num" title="Current FAAB remaining in Sleeper">In Sleeper</th>
+                            <th class="num">To fix</th>
+                        </tr>
+                    </thead>
+                    <tbody id="balance-rows"></tbody>
+                </table>
+            </div>
+            <p class="muted small">Click a team to see its spends and bonuses. Red rows don't match Sleeper. "Banked" is money owed above the $<span class="cap"></span> cap; it gets added once they spend below it.</p>
+
+            <h2>Weekly bonuses</h2>
+            <div class="card table-card">
+                <table class="weeks">
+                    <thead><tr><th>Week</th><th>High score (+$<span class="top-bonus"></span>)</th><th>Low score (+$<span class="low-bonus"></span>)</th></tr></thead>
+                    <tbody id="week-rows"></tbody>
+                </table>
+            </div>
+        </section>
+        <footer class="muted small">Data from the public <a href="https://docs.sleeper.com/" target="_blank" rel="noopener">Sleeper API</a>. Use <code>?league=&lt;id&gt;</code> for another league.</footer>
+    </div>
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
