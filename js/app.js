@@ -215,27 +215,39 @@ function recompute() {
     render();
 }
 
-async function main() {
-    const leagueId = new URLSearchParams(location.search).get('league') || CONFIG.defaultLeagueId;
+function readAmounts() {
     const params = new URLSearchParams(location.search);
-    const readAmount = (key, fallback) => {
+    const read = (key, fallback) => {
         const n = Number(params.get(key));
         return params.has(key) && Number.isFinite(n) && n >= 0 ? n : fallback;
     };
-    const amounts = { top: readAmount('top', CONFIG.topScorerBonus), low: readAmount('low', CONFIG.lowScorerBonus) };
-    $('top-bonus-input').value = amounts.top;
-    $('low-bonus-input').value = amounts.low;
-    showAmounts(amounts);
+    return { top: read('top', CONFIG.topScorerBonus), low: read('low', CONFIG.lowScorerBonus) };
+}
+
+function setLeagueParam(leagueId) {
+    const params = new URLSearchParams(location.search);
+    if (leagueId === CONFIG.defaultLeagueId) params.delete('league'); else params.set('league', leagueId);
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
+
+let nflStatePromise = null;
+const getNflState = () => (nflStatePromise ||= getJSON('/state/nfl'));
+let loadToken = 0;
+
+async function loadLeague(leagueId, amounts) {
+    const token = ++loadToken;
+    $('error').classList.add('hidden');
+    $('results').classList.add('hidden');
+    $('loading').classList.remove('hidden');
+    $('league-name').textContent = 'Loading league…';
     try {
         const [league, nflState, users, rosters] = await Promise.all([
-            getJSON(`/league/${leagueId}`), getJSON('/state/nfl'),
+            getJSON(`/league/${leagueId}`), getNflState(),
             getJSON(`/league/${leagueId}/users`), getJSON(`/league/${leagueId}/rosters`),
         ]);
         if (!league) throw new Error(`League ${leagueId} not found`);
         const budget = league.settings.waiver_budget || 100;
-        for (const c of document.querySelectorAll('#cap, .cap')) c.textContent = budget;
-        $('league-name').textContent = `${league.name} · ${league.season}`;
-        document.title = `FAAB Tracker · ${league.name}`;
 
         const { weeks, lastTxWeek } = completedWeeks(league, nflState);
         const txWeeks = Array.from({ length: lastTxWeek }, (_, i) => i + 1);
@@ -243,10 +255,17 @@ async function main() {
             Promise.all(weeks.map(async (w) => [w, await getJSON(`/league/${leagueId}/matchups/${w}`) || []])),
             Promise.all(txWeeks.map(async (w) => [w, await getJSON(`/league/${leagueId}/transactions/${w}`) || []])),
         ]);
+        if (token !== loadToken) return;
 
-        const userById = new Map(users.map((u) => [u.user_id, u]));
+        for (const c of document.querySelectorAll('#cap, .cap')) c.textContent = budget;
+        $('league-name').textContent = `${league.name} · ${league.season}`;
+        document.title = `FAAB Tracker · ${league.name}`;
+        const select = $('league-select');
+        if ([...select.options].some((o) => o.value === leagueId)) select.value = leagueId;
+
+        const userById = new Map((users || []).map((u) => [u.user_id, u]));
         const bonuses = weeklyBonuses(matchups);
-        const rows = rosters.map((r) => {
+        const rows = (rosters || []).map((r) => {
             const user = userById.get(r.owner_id);
             return {
                 rosterId: r.roster_id, user,
@@ -257,32 +276,91 @@ async function main() {
         });
 
         state = {
-            rows, bonuses, budget, weeks, rosters, txs, amounts,
+            leagueId, rows, bonuses, budget, weeks, rosters: rosters || [], txs, amounts,
             teamName: (rid) => rows.find((r) => r.rosterId === rid)?.displayName || `Team ${rid}`,
         };
         $('loading').classList.add('hidden');
         $('results').classList.remove('hidden');
         recompute();
-        for (const [key, id] of [['top', 'top-bonus-input'], ['low', 'low-bonus-input']]) {
-            $(id).addEventListener('input', () => {
-                const n = Number($(id).value);
-                if ($(id).value === '' || !Number.isFinite(n) || n < 0) return;
-                state.amounts[key] = n;
-                showAmounts(state.amounts);
-                updateUrl(state.amounts);
-                recompute();
-            });
-        }
-        $('balance-rows').addEventListener('click', (ev) => {
-            const tr = ev.target.closest('tr.team');
-            if (tr) toggle(Number(tr.dataset.rid));
-        });
-        loadPlayers();
+        if (!players) loadPlayers();
     } catch (e) {
+        if (token !== loadToken) return;
         $('loading').classList.add('hidden');
+        $('league-name').textContent = '';
         $('error').classList.remove('hidden');
         $('error').textContent = `Couldn't load league data: ${e.message}`;
     }
+}
+
+async function findLeagues({ quiet = false } = {}) {
+    const username = $('username-input').value.trim();
+    const status = $('user-status');
+    const select = $('league-select');
+    if (!username) {
+        if (!quiet) status.textContent = 'Enter a Sleeper username.';
+        return;
+    }
+    status.textContent = `Looking up ${username}…`;
+    try {
+        const user = await getJSON(`/user/${encodeURIComponent(username)}`);
+        if (!user?.user_id) throw new Error(`Couldn't find Sleeper user "${username}".`);
+        const nflState = await getNflState();
+        const season = Number(nflState.league_season || nflState.season);
+        const leaguesFor = (y) => getJSON(`/user/${user.user_id}/leagues/nfl/${y}`).then((l) => l || []).catch(() => []);
+        let leagues = await leaguesFor(season);
+        if (!leagues.length) leagues = await leaguesFor(season - 1);
+        if (!leagues.length) throw new Error(`${user.display_name || username} has no NFL leagues for ${season}.`);
+        localStorage.setItem('faab.username', username);
+
+        select.innerHTML = '<option value="">Pick a league…</option>' + leagues.map((l) =>
+            `<option value="${esc(l.league_id)}">${esc(l.season)} · ${esc(l.name)} (${l.total_rosters} teams)</option>`).join('');
+        select.classList.remove('hidden');
+        const current = state?.leagueId || new URLSearchParams(location.search).get('league') || CONFIG.defaultLeagueId;
+        if (leagues.some((l) => l.league_id === current)) select.value = current;
+        status.textContent = `${user.display_name || username}: ${leagues.length} league${leagues.length > 1 ? 's' : ''}.`;
+
+        if (!quiet && leagues.length === 1 && leagues[0].league_id !== state?.leagueId) {
+            select.value = leagues[0].league_id;
+            chooseLeague(leagues[0].league_id);
+        }
+    } catch (e) {
+        status.textContent = e.message.startsWith('Sleeper API') ? `Couldn't look up "${username}".` : e.message;
+    }
+}
+
+function chooseLeague(leagueId) {
+    if (!leagueId) return;
+    setLeagueParam(leagueId);
+    loadLeague(leagueId, state?.amounts || readAmounts());
+}
+
+function main() {
+    const leagueId = new URLSearchParams(location.search).get('league') || CONFIG.defaultLeagueId;
+    const amounts = readAmounts();
+    $('top-bonus-input').value = amounts.top;
+    $('low-bonus-input').value = amounts.low;
+    showAmounts(amounts);
+
+    for (const [key, id] of [['top', 'top-bonus-input'], ['low', 'low-bonus-input']]) {
+        $(id).addEventListener('input', () => {
+            const n = Number($(id).value);
+            if ($(id).value === '' || !Number.isFinite(n) || n < 0) return;
+            amounts[key] = n;
+            showAmounts(amounts);
+            updateUrl(amounts);
+            if (state) { state.amounts = amounts; recompute(); }
+        });
+    }
+    $('balance-rows').addEventListener('click', (ev) => {
+        const tr = ev.target.closest('tr.team');
+        if (tr) toggle(Number(tr.dataset.rid));
+    });
+    $('user-form').addEventListener('submit', (ev) => { ev.preventDefault(); findLeagues(); });
+    $('league-select').addEventListener('change', (ev) => chooseLeague(ev.target.value));
+
+    const saved = localStorage.getItem('faab.username');
+    if (saved) { $('username-input').value = saved; findLeagues({ quiet: true }); }
+    loadLeague(leagueId, amounts);
 }
 
 main();
