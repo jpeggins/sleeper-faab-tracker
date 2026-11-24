@@ -14,7 +14,7 @@ Sleeper caps FAAB at the league budget ($100), so bonuses above the cap can't be
 
 Rows where Sleeper doesn't match "Should show" are red, with the amount to add or remove. Click a team to see each spend and bonus with a running balance.
 
-Only completed regular-season weeks earn bonuses. Settings live in `js/config.js`; `?league=<id>` loads another league.
+Only completed regular-season weeks earn bonuses. The bonus amounts can be changed at the top of the page (defaults in `js/config.js`) and are kept in the URL as `?top=<n>&low=<n>`; `?league=<id>` loads another league.
 
 ## Run locally
 

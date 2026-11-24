@@ -15,8 +15,8 @@
         </header>
 
         <section class="card rules">
-            <div>Weekly high score: <b class="pos">+$<span id="top-bonus"></span></b></div>
-            <div>Weekly low score: <b class="pos">+$<span id="low-bonus"></span></b></div>
+            <label>Weekly high score: <span class="pos">+$</span><input type="number" id="top-bonus-input" class="bonus-input" min="0" step="1" inputmode="numeric"></label>
+            <label>Weekly low score: <span class="pos">+$</span><input type="number" id="low-bonus-input" class="bonus-input" min="0" step="1" inputmode="numeric"></label>
             <div>Sleeper max: <b>$<span id="cap"></span></b> (extra is banked here)</div>
             <div id="weeks-counted" class="muted"></div>
         </section>

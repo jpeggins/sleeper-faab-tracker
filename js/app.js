@@ -39,7 +39,7 @@ function weeklyBonuses(matchupsByWeek) {
     return result;
 }
 
-function buildLedgers(rosters, txByWeek, bonuses, budget) {
+function buildLedgers(rosters, txByWeek, bonuses, budget, amounts) {
     const ledgers = new Map(rosters.map((r) => [r.roster_id, []]));
     const push = (rid, entry) => ledgers.get(rid)?.push(entry);
 
@@ -59,8 +59,8 @@ function buildLedgers(rosters, txByWeek, bonuses, budget) {
         }
     }
     for (const b of bonuses) {
-        for (const s of b.top) push(s.rosterId, { week: b.week, order: 1, ts: 0, kind: 'top', amount: CONFIG.topScorerBonus, points: s.points, tie: b.top.length > 1 });
-        for (const s of b.low) push(s.rosterId, { week: b.week, order: 1, ts: 0, kind: 'low', amount: CONFIG.lowScorerBonus, points: s.points, tie: b.low.length > 1 });
+        for (const s of b.top) push(s.rosterId, { week: b.week, order: 1, ts: 0, kind: 'top', amount: amounts.top, points: s.points, tie: b.top.length > 1 });
+        for (const s of b.low) push(s.rosterId, { week: b.week, order: 1, ts: 0, kind: 'low', amount: amounts.low, points: s.points, tie: b.low.length > 1 });
     }
 
     const out = new Map();
@@ -193,10 +193,39 @@ async function loadPlayers() {
     }
 }
 
+function showAmounts(amounts) {
+    for (const c of document.querySelectorAll('.top-bonus')) c.textContent = amounts.top;
+    for (const c of document.querySelectorAll('.low-bonus')) c.textContent = amounts.low;
+}
+
+function updateUrl(amounts) {
+    const params = new URLSearchParams(location.search);
+    for (const key of ['top', 'low']) {
+        const def = key === 'top' ? CONFIG.topScorerBonus : CONFIG.lowScorerBonus;
+        if (amounts[key] === def) params.delete(key); else params.set(key, amounts[key]);
+    }
+    const qs = params.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
+
+function recompute() {
+    const stats = buildLedgers(state.rosters, state.txs, state.bonuses, state.budget, state.amounts);
+    for (const row of state.rows) row.stats = stats.get(row.rosterId);
+    state.rows.sort((a, b) => (b.stats.fix !== 0) - (a.stats.fix !== 0) || b.stats.real - a.stats.real);
+    render();
+}
+
 async function main() {
     const leagueId = new URLSearchParams(location.search).get('league') || CONFIG.defaultLeagueId;
-    for (const c of document.querySelectorAll('#top-bonus, .top-bonus')) c.textContent = CONFIG.topScorerBonus;
-    for (const c of document.querySelectorAll('#low-bonus, .low-bonus')) c.textContent = CONFIG.lowScorerBonus;
+    const params = new URLSearchParams(location.search);
+    const readAmount = (key, fallback) => {
+        const n = Number(params.get(key));
+        return params.has(key) && Number.isFinite(n) && n >= 0 ? n : fallback;
+    };
+    const amounts = { top: readAmount('top', CONFIG.topScorerBonus), low: readAmount('low', CONFIG.lowScorerBonus) };
+    $('top-bonus-input').value = amounts.top;
+    $('low-bonus-input').value = amounts.low;
+    showAmounts(amounts);
     try {
         const [league, nflState, users, rosters] = await Promise.all([
             getJSON(`/league/${leagueId}`), getJSON('/state/nfl'),
@@ -217,24 +246,33 @@ async function main() {
 
         const userById = new Map(users.map((u) => [u.user_id, u]));
         const bonuses = weeklyBonuses(matchups);
-        const stats = buildLedgers(rosters, txs, bonuses, budget);
         const rows = rosters.map((r) => {
             const user = userById.get(r.owner_id);
             return {
                 rosterId: r.roster_id, user,
                 displayName: user?.display_name || `Team ${r.roster_id}`,
                 teamName: user?.metadata?.team_name || '',
-                stats: stats.get(r.roster_id), open: false,
+                stats: null, open: false,
             };
-        }).sort((a, b) => (b.stats.fix !== 0) - (a.stats.fix !== 0) || b.stats.real - a.stats.real);
+        });
 
         state = {
-            rows, bonuses, budget, weeks,
+            rows, bonuses, budget, weeks, rosters, txs, amounts,
             teamName: (rid) => rows.find((r) => r.rosterId === rid)?.displayName || `Team ${rid}`,
         };
         $('loading').classList.add('hidden');
         $('results').classList.remove('hidden');
-        render();
+        recompute();
+        for (const [key, id] of [['top', 'top-bonus-input'], ['low', 'low-bonus-input']]) {
+            $(id).addEventListener('input', () => {
+                const n = Number($(id).value);
+                if ($(id).value === '' || !Number.isFinite(n) || n < 0) return;
+                state.amounts[key] = n;
+                showAmounts(state.amounts);
+                updateUrl(state.amounts);
+                recompute();
+            });
+        }
         $('balance-rows').addEventListener('click', (ev) => {
             const tr = ev.target.closest('tr.team');
             if (tr) toggle(Number(tr.dataset.rid));
